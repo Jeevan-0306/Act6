@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CT Scan Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="visualization-container">
+    <header>
+        <h1>CT Scan Image Visualization</h1>
+    </header>
+    <section class="sliders">
+        <label for="binsSlider">Number of Bins</label>
+        <input type="range" id="binsSlider" min="2" max="50" value="10" step="1" />
+
+        <label for="lowerLimit">Minimum Threshold</label>
+        <input type="range" id="lowerLimit" min="0" max="1000" value="0" />
+
+        <label for="upperLimit">Maximum Threshold</label>
+        <input type="range" id="upperLimit" min="0" max="1000" value="1000" />
+    </section>
+    <hr />
+    <div id="loader">
+        <div class="spinner"></div>
+        Loading data...
+    </div>
+    <main class="main-content">
+        <div id="fileSelector">
+            <select id="fileList" name="fileList" size="10" multiple></select>
+        </div>
+        <div class="chart-container">
+            <svg viewBox="-5 -10 270 270"></svg>
+        </div>
+    </main>
+</div>
+
+<script>
+    // D3 Elements
+    const chartArea = d3.select("svg");
+    const geoPath = d3.geoPath();
+
+    // State Variables
+    let binSliderValue = +document.querySelector("#binsSlider").value;
+    let minSliderValue = +document.querySelector("#lowerLimit").value;
+    let maxSliderValue = +document.querySelector("#upperLimit").value;
+
+    // Plot the Contour Visualization
+    function generateContours(selectedFile) {
+        d3.json("dicomData/" + selectedFile).then(scanData => {
+            chartArea.selectAll("*").remove(); // Clear previous visualization
+
+            const gridSize = 256;
+            const densityValues = scanData.flatMap(row => row.map(value => +value));
+
+            const dataMin = d3.min(densityValues);
+            const dataMax = d3.max(densityValues);
+
+            // Update slider limits dynamically
+            document.querySelector("#lowerLimit").min = dataMin;
+            document.querySelector("#lowerLimit").max = dataMax;
+            document.querySelector("#upperLimit").min = dataMin;
+            document.querySelector("#upperLimit").max = dataMax;
+
+            // Render Contours
+            function render(binCount, minThreshold, maxThreshold) {
+                const colorScale = d3.scaleLinear()
+                    .domain(d3.range(minThreshold, maxThreshold, (maxThreshold - minThreshold) / 10))
+                    .range(["#08306b", "#2171b5", "#4292c6", "#6baed6", "#9ecae1", "#c6dbef", "#deebf7"])
+                    .interpolate(d3.interpolateHcl);
+
+                const contourThresholds = d3.range(
+                    minThreshold,
+                    maxThreshold,
+                    (maxThreshold - minThreshold) / binCount
+                );
+
+                const contours = d3.contours()
+                    .size([gridSize, gridSize])
+                    .thresholds(contourThresholds)
+                    (densityValues);
+
+                chartArea.append("g")
+                    .attr("class", "contour-group")
+                    .selectAll("path")
+                    .data(contours)
+                    .enter()
+                    .append("path")
+                    .attr("d", geoPath)
+                    .attr("stroke", "black")
+                    .attr("stroke-width", "0.1px")
+                    .attr("stroke-linejoin", "round")
+                    .attr("fill", d => colorScale(d.value));
+            }
+
+            render(binSliderValue, minSliderValue, maxSliderValue);
+
+            // Update on Slider Input
+            document.addEventListener("input", event => {
+                binSliderValue = +document.querySelector("#binsSlider").value;
+                minSliderValue = +document.querySelector("#lowerLimit").value;
+                maxSliderValue = +document.querySelector("#upperLimit").value;
+
+                if (["binsSlider", "lowerLimit", "upperLimit"].includes(event.target.id)) {
+                    render(binSliderValue, minSliderValue, maxSliderValue);
+                }
+            });
+        });
+    }
+
+    // Populate File List
+    function populateFileList() {
+        const availableFiles = Array.from({ length: 20 }, (_, index) => `brain_${String(index + 1).padStart(3, "0")}.dcm.json`);
+        const fileDropdown = d3.select("#fileList");
+
+        fileDropdown.selectAll("option")
+            .data(availableFiles)
+            .enter()
+            .append("option")
+            .text(file => file);
+
+        fileDropdown.on("change", () => {
+            const selectedFile = fileDropdown.property("value");
+            generateContours(selectedFile);
+        });
+
+        fileDropdown.attr("size", availableFiles.length);
+    }
+
+    // Initialize Application
+    populateFileList();
+    generateContours("brain_001.dcm.json");
+</script>
+</body>
+</html>
